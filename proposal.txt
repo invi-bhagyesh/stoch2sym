@@ -262,7 +262,7 @@ Visualization & Matplotlib, Seaborn \\
 
 \section{Evaluation Task Results}
 
-The evaluation task notebooks and code are in the GitHub repository \href{https://github.com/invi-bhagyesh/sira}{\texttt{invi-bhagyesh/sira}}.
+The evaluation task notebooks and code are in the GitHub repository \href{https://github.com/invi-bhagyesh/stoch2sym}{\texttt{invi-bhagyesh/stoch2sym}}.
 
 \begin{itemize}
 \item \textbf{Task 1 (Simulation)}: Gillespie SSA validated against deterministic ODE for large $N$. Ensemble mean convergence verified. Stochastic variability visualized across population sizes. Full dataset of 120,000 trajectories generated.
