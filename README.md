@@ -79,7 +79,7 @@ dr/dt =  gamma * i
 ## References
 
 - Chen et al. (2018) -- [Neural Ordinary Differential Equations](https://arxiv.org/abs/1806.07366)
-- Brunton et al. (2016) -- [SINDy: Sparse Identification of Nonlinear Dynamics](https://www.pnas.org/doi/10.1073/pnas.1517384113)
+- Brunton et al. (2016) -- [Discovering Governing Equations from Data by Sparse Identification of Nonlinear Dynamical Systems](https://www.pnas.org/doi/10.1073/pnas.1517384113)
 - Cranmer (2023) -- [PySR: Interpretable ML for Science](https://arxiv.org/abs/2305.01582)
 - Vasilyeva et al. (2026) -- [Neural ODEs, KAN-ODEs and SINDy for Epidemic Processes](https://arxiv.org/abs/2601.09811)
-- Pani et al. (2025) -- [Scientific ML for Epidemiological Modelling](https://doi.org/10.1016/j.escienta.2025.100345)
+- Pani et al. (2025) -- A Novel Scientific Machine Learning Method for Epidemiological Modelling. *eScience*, 2025.
