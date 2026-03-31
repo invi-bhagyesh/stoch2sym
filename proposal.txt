@@ -1,0 +1,479 @@
+\documentclass[12pt]{article}
+
+\usepackage[a4paper,margin=0.75in]{geometry}
+\usepackage{amsmath, amssymb}
+\usepackage{hyperref}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{needspace}
+
+\setlength{\parskip}{0.5em}
+\setlength{\parindent}{0pt}
+
+\begin{document}
+
+\begin{titlepage}
+\centering
+
+\vspace*{2cm}
+{\Large GSoC 2026 Project Proposal}\\[2em]
+{\huge\bfseries Learning the SIR Model:\\[0.3em]From Stochastic Simulations\\[0.3em]to Symbolic ODEs}\\[2em]
+{\Large Organization: HumanAI Foundation}
+
+\vfill
+
+{\Large\textbf{MENTORS}}\\[0.5em]
+{\large Harrison Prosper (Florida State University)\\[0.3em]
+Olivia Prosper (University of Tennessee)\\[0.3em]
+Sergei Gleyzer (University of Alabama)}
+
+\vfill
+\vfill
+
+{\Large\textbf{AUTHOR}}\\[0.5em]
+{\large Bhagyesh Kumar}
+
+\vfill
+
+\end{titlepage}
+
+\begin{center}
+{\LARGE\bfseries Table of Contents}
+\end{center}
+
+\tableofcontents
+
+\newpage
+
+\section{Introduction and Contributor Information}
+
+\begin{itemize}
+\item \textbf{Name:} Bhagyesh Kumar
+\item \textbf{Email:} invi.bhagyesh@gmail.com
+\item \textbf{University:} MIT Manipal, India
+\item \textbf{Majors:} Mathematics and Computing
+\item \textbf{GitHub:} \href{https://github.com/invi-bhagyesh}{\texttt{github.com/invi-bhagyesh}}
+\item \textbf{Website:} \href{https://invi-bhagyesh.github.io/}{\texttt{invi-bhagyesh.github.io}}
+\item \textbf{LinkedIn:} \href{https://www.linkedin.com/in/invi-bhagyesh/}{\texttt{linkedin.com/in/invi-bhagyesh}}
+\end{itemize}
+
+\section{Abstract}
+
+The deterministic SIR model is defined by two coupled ordinary differential equations with parameters $\beta$ (transmission rate) and $\gamma$ (recovery rate). In practice, disease transmission is stochastic: individual-level randomness produces noisy epidemic curves that only converge to the deterministic ODE in the large-population limit. This project asks: \emph{can a machine learning pipeline, given only stochastic epidemic simulations, rediscover the deterministic SIR equations in closed symbolic form?}
+
+We propose a three-stage pipeline with a novel end-to-end approach at its core:
+
+\begin{enumerate}
+\item \textbf{Simulate}: Generate 120,000+ stochastic SIR epidemics using the Gillespie algorithm across a grid of $(\beta, \gamma, N)$ parameter combinations.
+\item \textbf{Learn the mean-field dynamics}: Train both (a) a standard Neural ODE on ensemble-averaged trajectories (baseline), and (b) a \textbf{Variational Mean-Field Distillation (VMFD)} model that learns the deterministic dynamics directly from raw stochastic ensembles via an information bottleneck, bypassing manual ensemble averaging entirely.
+\item \textbf{Recover the symbolic form}: Apply SINDy and PySR to the learned dynamics to distill the closed-form ODE: $\dot{S} = -\beta SI/N$, $\dot{I} = \beta SI/N - \gamma I$, $\dot{R} = \gamma I$.
+\end{enumerate}
+
+The key novelty is VMFD: a single end-to-end differentiable model that simultaneously filters stochastic noise via a variational information bottleneck and parameterizes the latent dynamics with a sparse symbolic layer, enabling direct symbolic ODE discovery from raw stochastic simulation ensembles without manual preprocessing. No existing method performs this.
+
+\section{Technical Details}
+
+\subsection{Background: The SIR Model}
+
+\subsubsection{Deterministic Form}
+
+The classic Kermack-McKendrick SIR model partitions a population of $N$ individuals into three compartments:
+\begin{align}
+\frac{dS}{dt} &= -\frac{\beta S I}{N} \label{eq:dSdt} \\
+\frac{dI}{dt} &= \frac{\beta S I}{N} - \gamma I \label{eq:dIdt} \\
+\frac{dR}{dt} &= \gamma I \label{eq:dRdt}
+\end{align}
+where $R_0 = \beta / \gamma$ determines whether an epidemic occurs ($R_0 > 1$) or dies out ($R_0 \leq 1$). Since $S + I + R = N$ is conserved, Eq.~\ref{eq:dRdt} is redundant.
+
+\subsubsection{Stochastic Form}
+
+The stochastic SIR model replaces continuous rates with discrete events:
+\begin{itemize}
+\item \textbf{Infection}: $S \to S-1,\; I \to I+1$ at rate $\beta S I / N$
+\item \textbf{Recovery}: $I \to I-1,\; R \to R+1$ at rate $\gamma I$
+\end{itemize}
+Simulated exactly via the Gillespie algorithm (SSA), each realization produces a different epidemic trajectory. For large $N$, the ensemble mean converges to the deterministic ODE solution. For small $N$, stochastic fluctuations are substantial: epidemics may die out by chance even when $R_0 > 1$. The challenge: given \emph{only} stochastic trajectories (not the ODE), recover Equations~\ref{eq:dSdt}--\ref{eq:dRdt}.
+
+\subsection{The Gap in Existing Work}
+
+Existing approaches fall into two disconnected camps:
+
+\textbf{Camp 1: ODE discovery from clean trajectories.} SINDy \cite{sindy}, PySR \cite{pysr}, D-CODE \cite{dcode}, and UDEs \cite{pani} all assume you observe trajectories of the deterministic system, or at minimum the pre-computed ensemble mean. They take $\dot{x} = f(x)$ data and try to recover $f$.
+
+\textbf{Camp 2: Neural ODEs for stochastic systems.} Neural ODEs and PINNs have been applied to epidemic models \cite{kosma, millevoi}, but they either (a) learn a black-box dynamics function that is never symbolically recovered, or (b) require you to first compute the ensemble mean and then apply SINDy as a separate post-hoc step \cite{vasilyeva, ioannou}.
+
+The current workflow is sequential and lossy: simulate $\to$ average $\to$ estimate derivatives $\to$ sparse regress. Each step introduces error. The averaging step discards information about the stochastic-to-deterministic relationship.
+
+\textbf{Closer work that still leaves a gap:}
+\begin{itemize}
+\item HyperSINDy \cite{hypersindy} models stochastic ODEs where the coefficients themselves are random, but it discovers the \emph{stochastic} equation, not the underlying deterministic mean-field limit.
+\item Ruiz-Morales et al. (2025) \cite{ruiz} showed theoretically that JEPAs learn Koopman invariants of dynamical systems, but no one has exploited this for symbolic ODE recovery.
+\item Polynomial Neural ODEs and KAN-ODEs \cite{kan_ude} learn polynomial dynamics from clean data but have not been combined with a variational filter for stochastic inputs.
+\end{itemize}
+
+\subsection{Proposed Approach: Variational Mean-Field Distillation (VMFD)}
+
+\subsubsection{Core Insight}
+
+Instead of the sequential pipeline (average stochastic runs $\to$ fit Neural ODE $\to$ extract symbols), we train a single model that simultaneously:
+\begin{enumerate}
+\item Learns a latent representation that is the \emph{sufficient statistic} for the mean-field dynamics, filtering out stochastic noise.
+\item Parameterizes the dynamics in that latent space with a \emph{symbolic neural network} (sparse polynomial or KAN) that is directly readable as an equation.
+\item Is trained end-to-end with a loss combining trajectory fitting, a variational information bottleneck (to force the latent to discard stochastic noise), and a sparsity penalty on the symbolic layer.
+\end{enumerate}
+
+\subsubsection{Architecture}
+
+\begin{verbatim}
+Stochastic trajectories {x^(k)(t)}_{k=1}^M
+        |
+        v
+[Encoder] -- encodes M stochastic realizations into
+        |   a distributional summary q(z | {x^(k)})
+        v
+    z ~ q(z)   <-- latent = sufficient statistic for (beta, gamma, x0)
+        |
+        v
+[Symbolic Neural ODE]  dz/dt = f_sym(z; xi)
+        |   where f_sym is a sparse polynomial/KAN
+        |   with learnable symbolic coefficients xi
+        v
+[Decoder] -- maps latent trajectory back to
+            observation space
+        |
+        v
+    Reconstruction of mean trajectory x_bar(t)
+\end{verbatim}
+
+\subsubsection{Loss Function}
+
+\begin{equation}
+\mathcal{L} = \underbrace{\|\hat{\bar{x}}(t) - \bar{x}(t)\|^2}_{\text{trajectory fit}} + \beta_{\text{IB}} \underbrace{D_{\text{KL}}(q(z|\{x^{(k)}\}) \| p(z))}_{\text{information bottleneck}} + \lambda \underbrace{\|\xi\|_1}_{\text{symbolic sparsity}}
+\end{equation}
+
+The \textbf{information bottleneck} term is the key: it forces the encoder to compress the ensemble of stochastic trajectories into a low-dimensional latent that retains only what is needed to predict the mean dynamics. This effectively learns the mean-field limit as a \emph{representation}, not as a preprocessing step.
+
+\subsubsection{Why This Matters}
+
+\begin{enumerate}
+\item \textbf{End-to-end}: No manual ensemble averaging. The model learns what to average and what to discard.
+\item \textbf{Directly symbolic}: The dynamics layer uses a sparse polynomial (or KAN), so the recovered equation is readable immediately, without a separate SINDy/PySR step.
+\item \textbf{Information-theoretically grounded}: As $M \to \infty$ and $\beta_{\text{IB}} \to \infty$, the optimal latent dynamics $f_{\text{sym}}$ should converge to the deterministic mean-field ODE. This connects mean-field limits of Markov processes, variational information bottlenecks, and symbolic ODE discovery.
+\item \textbf{Noise-robust}: The IB provides an inductive bias that replaces hand-coded structure (as in UDEs) with a learned compression, making the approach applicable to systems where the compartmental structure is unknown.
+\end{enumerate}
+
+\subsection{Baseline: Standard Sequential Pipeline}
+
+To rigorously evaluate VMFD, we also implement the standard sequential pipeline as a baseline:
+
+\needspace{8\baselineskip}
+\subsubsection{Stage 1: Stochastic SIR Simulation}
+
+\textbf{Algorithm}: Gillespie SSA, implemented in Python with NumPy.
+
+\textbf{Parameter grid}:
+\begin{table}[H]
+\centering
+\begin{tabular}{lll}
+\toprule
+Parameter & Range & Sampling \\
+\midrule
+$\beta$ (transmission rate) & $[0.1, 1.0]$ & 10 values \\
+$\gamma$ (recovery rate) & $[0.05, 0.5]$ & 10 values \\
+$N$ (population size) & $\{500, 1000, 5000, 10000\}$ & 4 values \\
+$I_0$ (initial infected) & $\{1, 5, 10\}$ & 3 values \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+This yields $10 \times 10 \times 4 \times 3 = 1{,}200$ parameter combinations $\times$ $M = 100$ realizations = \textbf{120,000 total trajectories}. Preprocessing: interpolate onto common time grid ($\Delta t = 0.1$), normalize to fractions ($s = S/N$), filter extinction-dominated combinations ($>50\%$ die-out).
+
+\subsubsection{Stage 2: Neural ODE (Baseline)}
+
+Parameter-conditioned Neural ODE learning $\dot{\mathbf{x}} = f_\theta(\mathbf{x}, \beta, \gamma)$:
+\begin{itemize}
+\item MLP: 3 hidden layers $\times$ 64 units, SiLU activation
+\item Input: $[s, i, r, \beta, \gamma] \in \mathbb{R}^5$, Output: $[\dot{s}, \dot{i}, \dot{r}] \in \mathbb{R}^3$
+\item Solver: \texttt{torchdiffeq} with Dormand-Prince (\texttt{dopri5})
+\item Conservation penalty: $\lambda \|\dot{s} + \dot{i} + \dot{r}\|^2$
+\item Training: AdamW ($\text{lr} = 10^{-3}$), 500 epochs, early stopping (patience 50)
+\end{itemize}
+
+\subsubsection{Stage 3: Symbolic Recovery}
+
+\textbf{SINDy}: Extract $f_\theta$ via autograd at 10,000+ sampled state-parameter points. Physics-motivated candidate library:
+\[
+\Theta = [1, s, i, r, s^2, i^2, si, sr, ir, \beta s, \beta i, \beta si, \gamma i, \gamma s, \gamma r, \ldots]
+\]
+Sparse regression via sequential thresholded least squares (STLS).
+
+\textbf{PySR}: Genetic programming search, operators $\{+, -, \times, /\}$, as validation of SINDy results.
+
+\textbf{Success criteria}:
+\begin{table}[H]
+\centering
+\begin{tabular}{lp{0.55\textwidth}}
+\toprule
+Level & Criterion \\
+\midrule
+\textbf{Full recovery} & All three equations in exact symbolic form \\[0.3em]
+\textbf{Partial recovery} & Correct form, imprecise coefficients (e.g., $\dot{s} \approx -0.98\beta si$) \\[0.3em]
+\textbf{Structural recovery} & Correct variables identified but form not fully simplified \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{VMFD Implementation Details}
+
+\textbf{Encoder}: Set encoder (DeepSets-style) that processes $M$ stochastic realizations and outputs $\mu_z, \sigma_z$ for the variational posterior $q(z|\{x^{(k)}\}) = \mathcal{N}(\mu_z, \sigma_z^2)$. Architecture: per-trajectory MLP $\to$ mean pooling across $M$ $\to$ projection to $(\mu, \log\sigma)$. Latent dimension: $d_z = 8$ (deliberately small to force compression).
+
+\textbf{Symbolic dynamics layer}: Polynomial Neural ODE with a fixed library of monomials up to degree 2 in $(z_1, z_2, z_3, \beta, \gamma)$ and learnable sparse coefficients $\xi$. $L_1$ penalty on $\xi$ encourages sparsity. Alternatively, a small KAN (2 layers, width 3) for comparison.
+
+\textbf{Decoder}: Linear projection from latent to observation space (since the SIR system is low-dimensional, the latent and observation spaces may be similar). For higher-dimensional extensions, a small MLP decoder.
+
+\textbf{Training}:
+\begin{itemize}
+\item $\beta_{\text{IB}}$ annealing: start at $0$, linearly increase to target value over 100 epochs (prevents posterior collapse early in training)
+\item $\lambda$ (sparsity): start at $0$, activate after 200 epochs when dynamics are roughly learned
+\item Optimizer: AdamW, $\text{lr} = 5 \times 10^{-4}$, weight decay $0.01$
+\item Epochs: 500 (early stopping on validation trajectory MSE)
+\item Reparameterization trick for differentiable sampling from $q(z)$
+\end{itemize}
+
+\subsection{Implementation Stack}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{ll}
+\toprule
+Component & Tool \\
+\midrule
+Stochastic simulation & Python + NumPy (Gillespie SSA) \\
+Neural ODE (baseline) & PyTorch + \texttt{torchdiffeq} \cite{chen_node} \\
+VMFD encoder/decoder & PyTorch \\
+Symbolic dynamics layer & Custom polynomial layer / KAN \\
+Sparse regression & PySINDy \cite{pysindy} \\
+Symbolic regression & PySR \cite{pysr} \\
+Visualization & Matplotlib, Seaborn \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Evaluation Task Results}
+
+The evaluation task notebooks and code are in the GitHub repository \href{https://github.com/invi-bhagyesh/sira}{\texttt{invi-bhagyesh/sira}}.
+
+\begin{itemize}
+\item \textbf{Task 1 (Simulation)}: Gillespie SSA validated against deterministic ODE for large $N$. Ensemble mean convergence verified. Stochastic variability visualized across population sizes. Full dataset of 120,000 trajectories generated.
+\item \textbf{Task 2 (Neural ODE)}: Parameter-conditioned Neural ODE trained on ensemble means. Predicted vs.\ actual trajectories compared on held-out $(\beta, \gamma)$ combinations. Metrics: MAE, relative peak infection error, peak timing error.
+\item \textbf{Task 3 (Symbolic Recovery)}: SINDy and PySR applied to Neural ODE autograd outputs. Recovered equations compared against ground truth. Finite-difference baseline included for comparison.
+\end{itemize}
+
+Notebooks: \texttt{01\_gillespie\_simulation.ipynb}, \texttt{02\_neural\_ode.ipynb}, \texttt{03\_symbolic\_recovery.ipynb}
+
+\section{Project Deliverables}
+
+The project delivers both a \textbf{solid baseline} (standard sequential pipeline) and a \textbf{novel contribution} (VMFD). The baseline ensures we have working results even if VMFD proves difficult; VMFD is the research contribution that makes this project more than an implementation exercise.
+
+\subsection{Objective and Implementation Details}
+
+\begin{itemize}
+\item \textbf{Stage 1: Stochastic Simulation}
+\begin{itemize}
+\item Gillespie SSA module with configurable parameters, ensemble simulation, interpolation, extinction filtering.
+\item Generate 120,000 trajectories across 1,200 parameter combinations.
+\item Save as compressed NumPy archives with metadata. 80/10/10 splits.
+\item Visualizations: trajectory fans, phase portraits, $R_0$ dependence, ensemble convergence vs.\ $N$.
+\end{itemize}
+
+\item \textbf{Stage 2a: Neural ODE Baseline}
+\begin{itemize}
+\item Parameter-conditioned MLP-ODE trained on ensemble-averaged trajectories.
+\item Conservation soft penalty. Noise augmentation for robustness.
+\item Evaluate: MAE, relative peak error, peak timing error on test set.
+\item Target: $< 2\%$ relative error on held-out trajectories.
+\end{itemize}
+
+\item \textbf{Stage 2b: VMFD (Novel Contribution)}
+\begin{itemize}
+\item Implement set encoder (DeepSets) for processing $M$ stochastic realizations.
+\item Implement variational bottleneck with $\beta_{\text{IB}}$ annealing.
+\item Implement sparse polynomial dynamics layer with $L_1$ penalty on coefficients.
+\item Implement KAN alternative for the dynamics layer.
+\item Train end-to-end: trajectory fit + IB + sparsity.
+\item Read off symbolic equations directly from the sparse coefficient vector $\xi$.
+\end{itemize}
+
+\item \textbf{Stage 3: Symbolic Recovery and Comparison}
+\begin{itemize}
+\item SINDy on Neural ODE autograd output (baseline symbolic recovery).
+\item SINDy on finite-differenced data (noisier baseline).
+\item PySR on Neural ODE output (validation).
+\item VMFD direct readout (no separate SINDy needed).
+\item Comparison table: coefficient accuracy, structural correctness, number of terms, across all methods.
+\end{itemize}
+
+\item \textbf{Evaluation Metrics}
+\begin{itemize}
+\item \textbf{Simulation}: ensemble mean convergence to deterministic ODE; extinction rate vs.\ $R_0$.
+\item \textbf{Neural ODE}: MAE, relative peak error, conservation violation.
+\item \textbf{VMFD}: same trajectory metrics + IB loss curve + sparsity of $\xi$ + symbolic accuracy.
+\item \textbf{Symbolic}: full/partial/structural recovery level; coefficient error $|c_{\text{recovered}} - c_{\text{true}}|$; Pareto front (complexity vs.\ accuracy for PySR).
+\end{itemize}
+
+\item \textbf{Ablation Studies}
+\begin{itemize}
+\item $\beta_{\text{IB}}$ strength: 0 (no IB, should overfit to stochastic fluctuations) vs.\ 0.01, 0.1, 1.0.
+\item End-to-end VMFD vs.\ sequential pipeline: does end-to-end training improve symbolic recovery?
+\item Polynomial vs.\ KAN symbolic layer: which yields more accurate and interpretable equations?
+\item Ensemble size $M$: how many stochastic realizations does VMFD need? Test $M = 10, 25, 50, 100$.
+\item Population size $N$: noise robustness at $N = 500$ (high noise) vs.\ $N = 10{,}000$ (low noise).
+\end{itemize}
+
+\item \textbf{Documentation}
+\begin{itemize}
+\item Clean modular codebase (\texttt{src/} for modules, \texttt{notebooks/} for experiments).
+\item Final report: methodology, all results, ablation tables, recovered equations, discussion.
+\item README with setup instructions and reproducibility guide.
+\end{itemize}
+\end{itemize}
+
+\subsection{Stretch Goals}
+
+\begin{enumerate}
+\item \textbf{SEIR extension}: Apply VMFD to the 4-compartment SEIR model. Tests whether the approach scales to higher-dimensional ODEs where the symbolic structure is more complex.
+\item \textbf{Theoretical analysis}: Provide formal or empirical evidence that the IB-optimal latent dynamics converges to the mean-field ODE as $M \to \infty$ and $\beta_{\text{IB}} \to \infty$.
+\item \textbf{Lotka-Volterra}: Apply to predator-prey dynamics (oscillatory, structurally different from SIR) to demonstrate generality beyond compartmental epidemic models.
+\item \textbf{Universal Differential Equations}: Implement UDE formulation with embedded compartmental structure as an additional comparison method.
+\end{enumerate}
+
+\subsection{Timeline for Deliverables}
+
+\begin{itemize}
+\item \textbf{Community Bonding Period:} Study Neural ODE and SINDy implementations. Read Vasilyeva et al.~\cite{vasilyeva}, Pani et al.~\cite{pani}, and HyperSINDy \cite{hypersindy}. Implement and validate Gillespie SSA for a single $(\beta, \gamma)$ pair. Reproduce deterministic solution for large $N$. Set up compute.
+
+\item \textbf{Week 1:} Build Gillespie SSA module. Validate against deterministic ODE. Test edge cases: $R_0 < 1$, $R_0 \gg 1$, small $N$. Implement time-grid interpolation and extinction detection.
+
+\item \textbf{Week 2:} Generate full dataset (120,000 trajectories). Compute ensemble means. Apply extinction filtering. Save dataset. Produce visualizations: trajectory fans, phase portraits, convergence analysis.
+
+\item \textbf{Week 3:} Implement parameter-conditioned Neural ODE baseline. Train on small subset to debug. Verify backpropagation through ODE solver. Tune conservation penalty.
+
+\item \textbf{Week 4:} Scale Neural ODE training to full dataset. Architecture sweep (depth, width, activation). Evaluate on test set. Produce comparison plots (predicted vs.\ actual).
+
+\item \textbf{Week 5:} Implement SINDy pipeline: autograd extraction from Neural ODE, candidate library, STLS. Evaluate symbolic recovery quality. Implement PySR as validation. \textbf{Midterm}: working baseline pipeline (simulator $\to$ Neural ODE $\to$ SINDy) with initial symbolic recovery results.
+
+\item \textbf{Week 6:} Begin VMFD implementation. Build set encoder (DeepSets). Build variational bottleneck with reparameterization trick and $\beta_{\text{IB}}$ annealing. Test encoder in isolation: does it learn meaningful latent representations from stochastic ensembles?
+
+\item \textbf{Week 7:} Implement sparse polynomial dynamics layer. Integrate with encoder and decoder. Train end-to-end on SIR data. Monitor: trajectory MSE, IB loss, sparsity of $\xi$. Debug convergence issues (IB annealing schedule is critical).
+
+\item \textbf{Week 8:} Implement KAN alternative for dynamics layer. Compare polynomial vs.\ KAN. Tune $\beta_{\text{IB}}$ and $\lambda$ (sparsity). Read off recovered equations from $\xi$ and compare against ground truth.
+
+\item \textbf{Week 9:} Full comparison: VMFD vs.\ Neural ODE + SINDy vs.\ Neural ODE + PySR vs.\ finite-difference + SINDy. Build comparison tables. Ablate $\beta_{\text{IB}}$ (0, 0.01, 0.1, 1.0) and ensemble size $M$ (10, 25, 50, 100).
+
+\item \textbf{Week 10:} Noise robustness study: vary $N$ from 500 to 10,000. Determine minimum data requirements for symbolic recovery at each method. Population-size ablation for VMFD.
+
+\item \textbf{Week 11:} Stretch goals if ahead: SEIR extension or Lotka-Volterra. Error analysis: when and why does each method fail? Write final report.
+
+\item \textbf{Week 12:} Clean codebase, finalize documentation, package notebooks. Discuss potential paper submission with mentors. Submit all materials.
+\end{itemize}
+
+\textbf{Note on project duration}: This is a 175-hour project ($\sim$15 hours/week over 12 weeks). The baseline pipeline (Weeks 1--5) ensures deliverables regardless; VMFD (Weeks 6--10) is the research contribution.
+
+\section{Other Information}
+
+\subsection{Why HumanAI / SIRA?}
+
+This project sits at the exact intersection of my background and interests: it combines differential equations, stochastic processes, and machine learning, all topics in my Mathematics and Computing programme. The three-stage pipeline is an elegant demonstration of scientific ML, and the VMFD extension turns it into genuine research. I am drawn to problems where ML is used not just for prediction but for \emph{discovery}: recovering interpretable structure from data. The fact that the ground truth is known (the SIR equations) means we can rigorously evaluate every step.
+
+Working with mentors across epidemiology (Prof.\ Olivia Prosper), physics (Prof.\ Harrison Prosper), and ML (Prof.\ Sergei Gleyzer) is a unique opportunity to learn how different fields approach the same mathematical structures.
+
+\subsection{Academic Background}
+
+I am a sophomore at Manipal Institute of Technology, India, majoring in Mathematics and Computing. My coursework includes differential equations, probability theory, numerical methods, linear algebra, and real analysis, all directly relevant to this project. I switched to this programme from CS after realizing during my first research project that I needed stronger mathematical foundations. I have independently worked through Stanford CS229, ARENA (AI safety training programme), and multiple Hugging Face deep learning courses.
+
+\subsection{Past Experience}
+
+\textbf{Published research.} ``TopoReformer: Mitigating Adversarial Attacks Using Topological Purification in OCR Models'' (AAAI 2026 Workshop, oral presentation in Singapore). Used persistent homology to defend OCR models against adversarial perturbations. arXiv:2511.15807. This required working with continuous mathematical structures (manifolds, persistence diagrams) applied to neural networks, directly analogous to this project's use of ODE structure in neural networks.
+
+\textbf{AI safety research.} Currently part of SPAR Spring 2026 cohort at Cornell University under Prof.\ Lionel Levine, working on quantifying emergent misalignment. Also working on evaluation awareness at Algoverse AI Safety Fellowship.
+
+\textbf{Research leadership.} Lead MRM Research, a student research team at MIT Manipal that has produced 40+ papers in the past 5 years.
+
+\textbf{Implementation experience.} Implemented 10+ papers from scratch (GPT, LoRA, DPO, DeepSeekV3, representation engineering, sparse autoencoders). Strong PyTorch skills, comfortable with autograd, custom training loops, and ODE solvers.
+
+\textbf{Relevant to this project.} Experience with PyTorch autograd (used extensively in representation engineering), variational methods (VAE implementations), and mathematical structures in ML. The VMFD pipeline requires exactly this combination of PyTorch proficiency, variational inference understanding, and mathematical maturity.
+
+\subsection{Commitments}
+
+This is a 175-hour project. I will dedicate approximately 15 hours per week over 12 weeks. My university schedule is flexible, and I have no conflicting obligations during summer 2026. My current research commitments (SPAR, Algoverse) will be completed before GSoC begins. I am available via email, Slack, and video calls in IST (GMT+5:30).
+
+\section{Risks and Mitigation}
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{p{0.20\textwidth}p{0.08\textwidth}p{0.60\textwidth}}
+\toprule
+Risk & Likelihood & Mitigation \\
+\midrule
+VMFD fails to converge or IB causes posterior collapse & Medium & $\beta_{\text{IB}}$ annealing (start at 0, slowly increase). If VMFD fails entirely, the baseline pipeline (Neural ODE + SINDy) still delivers full results. \\[0.8em]
+Neural ODE baseline fails to learn mean dynamics & Low & SIR is low-dimensional (3 states, 2 params). Fall back to per-$(\beta, \gamma)$ training. Try larger networks or longer training. \\[0.8em]
+SINDy fails to recover exact symbolic form & Medium & Ensure candidate library contains correct terms. Try ensemble SINDy (E-SINDy). PySR as fallback. \\[0.8em]
+Sparse polynomial layer in VMFD learns wrong sparsity pattern & Medium & Anneal $\lambda$ (sparsity) slowly, activate only after dynamics are roughly learned. Compare polynomial vs.\ KAN. Post-process with least squares coefficient refinement. \\[0.8em]
+Stochastic simulations too slow & Low & Gillespie for SIR with 2 reactions is fast ($<1$s per trajectory). Full dataset parallelizable in $<2$ hours. \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\renewcommand{\refname}{References}
+\begin{thebibliography}{99}
+
+\bibitem{vasilyeva}
+Vasilyeva et al. ``Learning Ecological and Epidemic Processes using Neural ODEs, KAN-ODEs and SINDy.'' arXiv:2601.09811, 2026.
+
+\bibitem{kosma}
+Kosma et al. ``Neural ODEs for Modeling Epidemic Spreading.'' \textit{TMLR}, 2023.
+
+\bibitem{pani}
+Pani et al. ``A Novel Scientific ML Method for Epidemiological Modelling.'' \textit{eScience}, 2025.
+
+\bibitem{rojas}
+Rojas Campos et al. ``Learning COVID-19 Regional Transmission Using UDEs in a SIR model.'' arXiv:2310.16804, 2023.
+
+\bibitem{kan_ude}
+Ma et al. ``Integrating KANs with ODEs for Efficient, Interpretable Deep Learning.'' medRxiv, 2024.
+
+\bibitem{millevoi}
+Millevoi et al. ``A PINN approach for compartmental epidemiological models.'' \textit{PLoS Comp.\ Bio.}, 2023.
+
+\bibitem{linka}
+Linka et al. ``Bayesian PINNs for real-world nonlinear dynamical systems.'' \textit{CMAME}, 2022.
+
+\bibitem{dcode}
+Qian et al. ``D-CODE: Discovering Closed-form ODEs from Observed Trajectories.'' \textit{ICLR}, 2022.
+
+\bibitem{ioannou}
+Ioannou et al. ``Neural ODEs and Symbolic Regression for Dynamical Systems.'' arXiv:2601.20637, 2026.
+
+\bibitem{sindy}
+Brunton et al. ``Discovering Governing Equations from Data by Sparse Identification of Nonlinear Dynamical Systems.'' \textit{PNAS}, 2016.
+
+\bibitem{chen_node}
+Chen et al. ``Neural Ordinary Differential Equations.'' \textit{NeurIPS}, 2018.
+
+\bibitem{pysindy}
+de Silva et al. ``PySINDy: Sparse identification of nonlinear dynamical systems from data.'' \textit{JOSS}, 2020.
+
+\bibitem{pysr}
+Cranmer. ``Interpretable ML for Science with PySR.'' arXiv:2305.01582, 2023.
+
+\bibitem{hypersindy}
+Jacobs et al. ``HyperSINDy: Deep Generative Modeling of Nonlinear Stochastic Governing Equations.'' arXiv:2310.04832, 2023.
+
+\bibitem{ruiz}
+Ruiz-Morales et al. ``JEPAs Learn Koopman Invariants of Dynamical Systems.'' \textit{Workshop on Symmetry and Geometry in Neural Representations}, 2025.
+
+\end{thebibliography}
+
+\end{document}

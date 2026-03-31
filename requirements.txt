@@ -1,0 +1,11 @@
+torch>=2.0
+torchdiffeq>=0.2.3
+numpy>=1.24
+scipy>=1.10
+pandas>=2.0
+matplotlib>=3.7
+seaborn>=0.12
+pysindy>=1.7
+pysr>=0.16
+h5py>=3.8
+tqdm>=4.65
