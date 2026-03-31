@@ -27,7 +27,7 @@ def gillespie_sir(params: SIRParams, t_max: float = 100.0, rng=None):
     if rng is None:
         rng = np.random.default_rng()
 
-    S, I, R = params.S0, params.I0, params.N - params.S0 - params.I0
+    S, I, R = params.S0, params.I0, 0
     N = params.N
 
     times = [0.0]
@@ -121,7 +121,7 @@ def deterministic_sir(params: SIRParams, t_max: float = 100.0, dt: float = 0.1):
     from scipy.integrate import solve_ivp
 
     N = params.N
-    s0, i0, r0 = params.S0 / N, params.I0 / N, (N - params.S0 - params.I0) / N
+    s0, i0, r0 = params.S0 / N, params.I0 / N, 0.0
 
     def rhs(t, y):
         s, i, r = y

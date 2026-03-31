@@ -39,13 +39,7 @@ class NeuralODE(nn.Module):
         Returns:
             trajectories: (T, batch, 3)
         """
-        state = torch.cat([x0, params], dim=-1)  # (batch, 5)
-
-        def ode_fn(t, state):
-            return self.dynamics(t, state)
-
-        # only integrate the sir components, params are constant
-        full_state = torch.cat([x0, params], dim=-1)
+        full_state = torch.cat([x0, params], dim=-1)  # (batch, 5)
 
         def augmented_ode(t, y):
             dy = self.dynamics(t, y)
@@ -134,13 +128,12 @@ def train_neural_ode(model, train_data, val_data, epochs=500, lr=1e-3,
             loss = ((pred - targets) ** 2).mean()
 
             if model.conservation_lambda > 0:
-                # sample some points for conservation penalty
-                sample_states = targets[:, ::10, :].reshape(-1, 3)
-                sample_params = p.unsqueeze(1).expand(-1, targets.size(1) // 10 + 1, -1)
-                sample_params = sample_params[:, :sample_states.size(0) // len(idx), :].reshape(-1, 2)
-                if sample_states.size(0) == sample_params.size(0):
-                    derivs = model.get_derivatives(sample_states, sample_params)
-                    loss = loss + model.conservation_lambda * model.conservation_loss(derivs)
+                B_cur = targets.size(0)
+                T_sub = targets[:, ::10, :].size(1)
+                sample_states = targets[:, ::10, :].reshape(-1, 3)  # (B*T_sub, 3)
+                sample_params = p.unsqueeze(1).expand(-1, T_sub, -1).reshape(-1, 2)  # (B*T_sub, 2)
+                derivs = model.get_derivatives(sample_states, sample_params)
+                loss = loss + model.conservation_lambda * model.conservation_loss(derivs)
 
             optimizer.zero_grad()
             loss.backward()

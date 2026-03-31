@@ -53,9 +53,8 @@ Sergei Gleyzer (University of Alabama)}
 \item \textbf{Email:} invi.bhagyesh@gmail.com
 \item \textbf{University:} MIT Manipal, India
 \item \textbf{Majors:} Mathematics and Computing
-\item \textbf{GitHub:} \href{https://github.com/invi-bhagyesh}{\texttt{github.com/invi-bhagyesh}}
-\item \textbf{Website:} \href{https://invi-bhagyesh.github.io/}{\texttt{invi-bhagyesh.github.io}}
-\item \textbf{LinkedIn:} \href{https://www.linkedin.com/in/invi-bhagyesh/}{\texttt{linkedin.com/in/invi-bhagyesh}}
+\item \textbf{GitHub:} \url{https://github.com/invi-bhagyesh}
+\item \textbf{LinkedIn:} \url{https://www.linkedin.com/in/invi-bhagyesh/}
 \end{itemize}
 
 \section{Abstract}
@@ -123,28 +122,11 @@ Instead of the sequential pipeline (average stochastic runs $\to$ fit Neural ODE
 \item Is trained end-to-end with a loss combining trajectory fitting, a variational information bottleneck (to force the latent to discard stochastic noise), and a sparsity penalty on the symbolic layer.
 \end{enumerate}
 
-\subsubsection{Architecture}
-
-\begin{verbatim}
-Stochastic trajectories {x^(k)(t)}_{k=1}^M
-        |
-        v
-[Encoder] -- encodes M stochastic realizations into
-        |   a distributional summary q(z | {x^(k)})
-        v
-    z ~ q(z)   <-- latent = sufficient statistic for (beta, gamma, x0)
-        |
-        v
-[Symbolic Neural ODE]  dz/dt = f_sym(z; xi)
-        |   where f_sym is a sparse polynomial/KAN
-        |   with learnable symbolic coefficients xi
-        v
-[Decoder] -- maps latent trajectory back to
-            observation space
-        |
-        v
-    Reconstruction of mean trajectory x_bar(t)
-\end{verbatim}
+\vspace{0.5em}
+\begin{center}
+\includegraphics[width=0.85\linewidth]{vgd.png}
+\end{center}
+\vspace{0.3em}
 
 \subsubsection{Loss Function}
 
@@ -262,7 +244,7 @@ Visualization & Matplotlib, Seaborn \\
 
 \section{Evaluation Task Results}
 
-The evaluation task notebooks and code are in the GitHub repository \href{https://github.com/invi-bhagyesh/stoch2sym}{\texttt{invi-bhagyesh/stoch2sym}}.
+The Jupyter Notebooks and results of the evaluation tasks are in the GitHub repository: \href{https://github.com/invi-bhagyesh/sira}{\texttt{invi-bhagyesh/sira}}.
 
 \begin{itemize}
 \item \textbf{Task 1 (Simulation)}: Gillespie SSA validated against deterministic ODE for large $N$. Ensemble mean convergence verified. Stochastic variability visualized across population sizes. Full dataset of 120,000 trajectories generated.

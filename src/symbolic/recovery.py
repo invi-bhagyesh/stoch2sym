@@ -66,14 +66,20 @@ def run_sindy(states, params, derivs, threshold=0.1):
         "gamma*s", "gamma*r",
     ]
 
+    # normalize features for numerical stability
+    scales = np.abs(features).max(axis=0)
+    scales[scales == 0] = 1.0
+    features_norm = features / scales
+
     results = {}
     target_names = ["ds/dt", "di/dt", "dr/dt"]
 
     for col, name in enumerate(target_names):
         y = derivs[:, col]
 
-        # STLS: sequential thresholded least squares
-        coeffs = _stls(features, y, threshold=threshold)
+        # STLS on normalized features, then rescale coefficients
+        coeffs_norm = _stls(features_norm, y, threshold=threshold)
+        coeffs = coeffs_norm / scales
 
         terms = []
         for j, c in enumerate(coeffs):

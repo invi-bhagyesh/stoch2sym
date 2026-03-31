@@ -85,7 +85,7 @@ def generate_dataset(
 
 
 def load_dataset(path="data/sir_dataset.npz"):
-    data = dict(np.load(path))
+    data = dict(np.load(path, allow_pickle=False))
     return data
 
 
@@ -95,7 +95,7 @@ def train_val_test_split(data, seed=42):
     rng = np.random.default_rng(seed)
     idx = rng.permutation(n)
     n_train = int(0.8 * n)
-    n_val = int(0.9 * n)
+    n_val = n_train + int(0.1 * n)
 
     def subset(indices):
         return {
