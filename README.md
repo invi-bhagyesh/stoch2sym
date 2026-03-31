@@ -1,10 +1,7 @@
 # SIRA -- Learning the SIR Model from Stochastic Simulations
 
-GSoC 2026 evaluation tasks for [HumanAI Foundation](https://humanai.foundation/).
-
-## Project
-
 Three-stage pipeline to recover the deterministic SIR equations from noisy stochastic epidemic data:
+
 1. **Simulate**: Gillespie SSA generates 120,000+ stochastic trajectories
 2. **Learn**: Neural ODE learns mean dynamics conditioned on (beta, gamma)
 3. **Recover**: SINDy and PySR extract symbolic ODE from the learned dynamics
@@ -49,14 +46,14 @@ Run notebooks in order:
 
 ## Model
 
-| Component | Specification |
-|---|---|
-| Simulator | Gillespie SSA (exact stochastic simulation) |
-| Neural ODE | MLP: 3 layers x 64 units, SiLU, input [s,i,r,beta,gamma] |
-| ODE Solver | torchdiffeq, Dormand-Prince (dopri5) |
-| Conservation | Soft penalty on ds/dt + di/dt + dr/dt |
-| SINDy | Physics-motivated library, STLS sparse regression |
-| PySR | Genetic programming, operators {+,-,*,/} |
+| Component    | Specification                                            |
+| ------------ | -------------------------------------------------------- |
+| Simulator    | Gillespie SSA (exact stochastic simulation)              |
+| Neural ODE   | MLP: 3 layers x 64 units, SiLU, input [s,i,r,beta,gamma] |
+| ODE Solver   | torchdiffeq, Dormand-Prince (dopri5)                     |
+| Conservation | Soft penalty on ds/dt + di/dt + dr/dt                    |
+| SINDy        | Physics-motivated library, STLS sparse regression        |
+| PySR         | Genetic programming, operators {+,-,\*,/}                |
 
 ## Target Equations
 
@@ -68,12 +65,12 @@ dr/dt =  gamma * i
 
 ## Parameter Grid
 
-| Parameter | Range | Values |
-|---|---|---|
-| beta | [0.1, 1.0] | 10 |
-| gamma | [0.05, 0.5] | 10 |
-| N | {500, 1000, 5000, 10000} | 4 |
-| I0 | {1, 5, 10} | 3 |
+| Parameter | Range                                 | Values                   |
+| --------- | ------------------------------------- | ------------------------ |
+| beta      | [0.1, 1.0]                            | 10                       |
+| gamma     | [0.05, 0.5]                           | 10                       |
+| N         | {500, 1000, 5000, 10000}              | 4                        |
+| I0        | {1, 5, 10}                            | 3                        |
 | **Total** | 1,200 combinations x 100 realizations | **120,000 trajectories** |
 
 ## References
@@ -82,4 +79,4 @@ dr/dt =  gamma * i
 - Brunton et al. (2016) -- [Discovering Governing Equations from Data by Sparse Identification of Nonlinear Dynamical Systems](https://www.pnas.org/doi/10.1073/pnas.1517384113)
 - Cranmer (2023) -- [PySR: Interpretable ML for Science](https://arxiv.org/abs/2305.01582)
 - Vasilyeva et al. (2026) -- [Neural ODEs, KAN-ODEs and SINDy for Epidemic Processes](https://arxiv.org/abs/2601.09811)
-- Pani et al. (2025) -- A Novel Scientific Machine Learning Method for Epidemiological Modelling. *eScience*, 2025.
+- Pani et al. (2025) -- A Novel Scientific Machine Learning Method for Epidemiological Modelling. _eScience_, 2025.
